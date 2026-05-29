@@ -1,0 +1,46 @@
+# Locke Directory Connector — Example Configuration
+# Copy this file to ./locke-connector.yaml and fill in your values.
+
+locke:
+  api_url: "https://api.locke.id"       # or your self-hosted Locke API URL
+  scim_token: ""                         # set via LOCKE_SCIM_TOKEN env var (recommended)
+  org_id: ""                             # auto-extracted from token
+
+ldap:
+  host: "dc01.acme.local"               # your domain controller hostname
+  port: 636                              # 636 for LDAPS, 389 for StartTLS
+  tls: true                              # true = LDAPS, false = StartTLS
+  tls_skip_verify: false                 # only for testing with self-signed certs
+  ca_cert: ""                            # path to custom CA cert (optional)
+  bind_dn: "CN=Locke Sync,OU=Service Accounts,DC=acme,DC=local"
+  bind_password: ""                      # set via LDAP_BIND_PASSWORD env var (recommended)
+  base_dn: "DC=acme,DC=local"
+
+sync:
+  interval: "5m"                         # incremental sync interval
+  full_sync_interval: "6h"              # full reconciliation interval
+  user_filter: "(&(objectClass=user)(objectCategory=person)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))"
+  group_filter: "(objectClass=group)"
+  user_search_base: ""                   # defaults to base_dn
+  group_search_base: ""                  # defaults to base_dn
+  group_include: []                      # list of group DNs or CN patterns (empty = all)
+  group_exclude:                         # exclude built-in groups
+    - "CN=Domain Controllers,*"
+    - "CN=Domain Computers,*"
+
+mapping:
+  user_id: "objectGUID"                  # immutable AD identifier → SCIM externalId
+  user_id_format: "base64"              # "base64" or "uuid" — MUST match your ADFS claim format
+  username: "sAMAccountName"            # → SCIM userName → Locke personame
+  email: "mail"                          # → SCIM emails[0].value
+  first_name: "givenName"               # → SCIM name.givenName
+  last_name: "sn"                        # → SCIM name.familyName
+  member_of: "memberOf"                  # group membership back-link
+
+state:
+  path: "./locke-connector.db"           # SQLite state file
+
+logging:
+  level: "info"                          # debug, info, warn, error
+  file: ""                               # empty = stdout
+  max_size_mb: 50
