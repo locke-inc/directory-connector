@@ -88,7 +88,7 @@ func setDefaults() {
 	viper.SetDefault("ldap.tls", true)
 	viper.SetDefault("sync.interval", "5m")
 	viper.SetDefault("sync.full_sync_interval", "6h")
-	viper.SetDefault("sync.user_filter", "(&(objectClass=user)(objectCategory=person)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))")
+	viper.SetDefault("sync.user_filter", "(&(objectClass=user)(objectCategory=person))")
 	viper.SetDefault("sync.group_filter", "(objectClass=group)")
 	viper.SetDefault("mapping.user_id", "objectGUID")
 	viper.SetDefault("mapping.user_id_format", "base64")

@@ -59,6 +59,15 @@ func (e *Engine) FullSync() (*Result, error) {
 		}
 	}
 
+	// Sync groups and membership
+	groupsCreated, _, groupErr := e.SyncGroups()
+	if groupErr != nil {
+		log.Error().Err(groupErr).Msg("group sync failed")
+	} else if groupsCreated > 0 {
+		log.Info().Int("groups_created", groupsCreated).Msg("groups synced")
+	}
+	e.SyncMembership(result)
+
 	// Update high-water mark to current
 	if maxUSN > 0 && !e.dryRun {
 		if err := e.store.SetHighWaterMark(maxUSN); err != nil {

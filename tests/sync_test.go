@@ -66,7 +66,7 @@ func TestSyncEngineFullSync(t *testing.T) {
 	t.Run("dry run makes no SCIM calls", func(t *testing.T) {
 		calls = nil
 		engine := sync.NewEngine(nil, scimClient, store, config.SyncConfig{
-			UserFilter: "(&(objectClass=user))",
+			UserFilter: "(&(objectClass=user)(objectCategory=person))",
 		}, config.MappingConfig{UserIDFormat: "base64"}, true)
 
 		// Directly test processUser would require LDAP entries.

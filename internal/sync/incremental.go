@@ -70,6 +70,11 @@ func (e *Engine) IncrementalSync() (*Result, error) {
 		}
 	}
 
+	// Sync membership changes (based on updated user memberOf)
+	if len(entries) > 0 {
+		e.SyncMembership(result)
+	}
+
 	// Update high-water mark
 	if maxUSN > highWaterMark && !e.dryRun {
 		if err := e.store.SetHighWaterMark(maxUSN); err != nil {

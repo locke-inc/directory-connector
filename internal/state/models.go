@@ -14,10 +14,11 @@ type SyncedUser struct {
 }
 
 type SyncedGroup struct {
-	ObjectGUID string
-	CN         string
-	Members    string // JSON array of member DNs
-	UpdatedAt  time.Time
+	ObjectGUID  string
+	CN          string
+	Members     string // JSON array of member usernames
+	SCIMGroupID string // SCIM-assigned group/vault ID
+	UpdatedAt   time.Time
 }
 
 type SyncInfo struct {

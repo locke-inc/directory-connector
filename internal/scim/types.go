@@ -45,7 +45,21 @@ func (e *SCIMError) Error() string {
 	return fmt.Sprintf("SCIM error %d: %s", e.StatusCode, e.Body)
 }
 
+type SCIMGroup struct {
+	Schemas     []string          `json:"schemas,omitempty"`
+	ID          string            `json:"id,omitempty"`
+	DisplayName string            `json:"displayName"`
+	ExternalID  string            `json:"externalId,omitempty"`
+	Members     []SCIMGroupMember `json:"members,omitempty"`
+}
+
+type SCIMListResponse struct {
+	TotalResults int         `json:"totalResults"`
+	Resources    []SCIMGroup `json:"Resources"`
+}
+
 const (
 	SchemaUser    = "urn:ietf:params:scim:schemas:core:2.0:User"
+	SchemaGroup   = "urn:ietf:params:scim:schemas:core:2.0:Group"
 	SchemaPatchOp = "urn:ietf:params:scim:api:messages:2.0:PatchOp"
 )

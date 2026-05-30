@@ -1,11 +1,14 @@
 package cmd
 
 import (
+	"io"
+	"os"
+
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"os"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 var cfgFile string
@@ -24,7 +27,7 @@ func Execute() error {
 func init() {
 	cobra.OnInitialize(initConfig)
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default ./locke-connector.yaml)")
-	rootCmd.PersistentFlags().String("log-level", "info", "log level (debug, info, warn, error)")
+	rootCmd.PersistentFlags().String("log-level", "", "log level override (debug, info, warn, error)")
 }
 
 func initConfig() {
@@ -46,12 +49,26 @@ func initConfig() {
 		}
 	}
 
+	// Determine log level: CLI flag > config file > default "info"
 	level, _ := rootCmd.PersistentFlags().GetString("log-level")
-	setupLogging(level)
+	if level == "" {
+		level = viper.GetString("logging.level")
+	}
+	if level == "" {
+		level = "info"
+	}
+
+	logFile := viper.GetString("logging.file")
+	maxSizeMB := viper.GetInt("logging.max_size_mb")
+	if maxSizeMB == 0 {
+		maxSizeMB = 50
+	}
+
+	setupLogging(level, logFile, maxSizeMB)
 }
 
-func setupLogging(level string) {
-	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
+func setupLogging(level, file string, maxSizeMB int) {
+	zerolog.TimeFieldFormat = zerolog.TimeFormatUnixMs
 
 	switch level {
 	case "debug":
@@ -64,5 +81,19 @@ func setupLogging(level string) {
 		zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	}
 
-	log.Logger = zerolog.New(os.Stdout).With().Timestamp().Logger()
+	var writer io.Writer = os.Stdout
+
+	if file != "" {
+		fileWriter := &lumberjack.Logger{
+			Filename:   file,
+			MaxSize:    maxSizeMB,
+			MaxBackups: 5,
+			MaxAge:     30,
+			Compress:   true,
+		}
+		// Write to both file and stdout for daemon visibility
+		writer = io.MultiWriter(os.Stdout, fileWriter)
+	}
+
+	log.Logger = zerolog.New(writer).With().Timestamp().Str("component", "locke-connector").Logger()
 }

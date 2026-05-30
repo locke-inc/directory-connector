@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS groups (
 	object_guid TEXT PRIMARY KEY,
 	cn TEXT NOT NULL,
 	members TEXT DEFAULT '[]',
+	scim_group_id TEXT DEFAULT '',
 	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 

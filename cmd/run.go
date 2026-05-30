@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -10,6 +11,7 @@ import (
 	"github.com/locke-inc/directory-connector/internal/config"
 	"github.com/locke-inc/directory-connector/internal/ldap"
 	"github.com/locke-inc/directory-connector/internal/scim"
+	"github.com/locke-inc/directory-connector/internal/service"
 	"github.com/locke-inc/directory-connector/internal/state"
 	"github.com/locke-inc/directory-connector/internal/sync"
 	"github.com/rs/zerolog/log"
@@ -27,6 +29,15 @@ func init() {
 }
 
 func runDaemon(cmd *cobra.Command, args []string) error {
+	if service.IsWindowsService() {
+		return service.RunAsService(func(stop <-chan struct{}) error {
+			return runDaemonLoop(stop)
+		})
+	}
+	return runDaemonLoop(nil)
+}
+
+func runDaemonLoop(serviceStop <-chan struct{}) error {
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -61,32 +72,72 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		Dur("full_sync_interval", fullSyncInterval).
 		Msg("daemon started")
 
+	// Maintain a persistent LDAP connection with automatic reconnection
+	var ldapClient *ldap.Client
+	consecutiveFailures := 0
+
+	ensureConnected := func() error {
+		if ldapClient != nil && ldapClient.IsConnected() {
+			return nil
+		}
+
+		if ldapClient != nil {
+			log.Warn().Msg("LDAP connection lost, reconnecting...")
+			if err := ldapClient.Reconnect(); err == nil {
+				log.Info().Msg("LDAP reconnected successfully")
+				consecutiveFailures = 0
+				return nil
+			}
+			ldapClient.Close()
+		}
+
+		var err error
+		ldapClient, err = ldap.NewClient(cfg.LDAP)
+		if err != nil {
+			consecutiveFailures++
+			backoff := time.Duration(consecutiveFailures) * 30 * time.Second
+			if backoff > 5*time.Minute {
+				backoff = 5 * time.Minute
+			}
+			log.Error().Err(err).Int("consecutive_failures", consecutiveFailures).Dur("next_retry_backoff", backoff).Msg("LDAP connection failed")
+			return err
+		}
+		consecutiveFailures = 0
+		log.Info().Msg("LDAP connection established")
+		return nil
+	}
+
 	incrementalTicker := time.NewTicker(incrementalInterval)
 	fullSyncTicker := time.NewTicker(fullSyncInterval)
 	defer incrementalTicker.Stop()
 	defer fullSyncTicker.Stop()
 
 	runOnce := func(full bool) {
-		ldapClient, err := ldap.NewClient(cfg.LDAP)
-		if err != nil {
-			log.Error().Err(err).Msg("failed to connect to LDAP")
+		if err := ensureConnected(); err != nil {
+			store.SetLastError(fmt.Sprintf("LDAP connection failed: %v", err))
 			return
 		}
-		defer ldapClient.Close()
 
 		engine := sync.NewEngine(ldapClient, scimClient, store, cfg.Sync, cfg.Mapping, false)
 
 		var result *sync.Result
+		var syncErr error
 		if full {
 			log.Info().Msg("starting scheduled full sync")
-			result, err = engine.FullSync()
+			result, syncErr = engine.FullSync()
 		} else {
 			log.Debug().Msg("starting scheduled incremental sync")
-			result, err = engine.IncrementalSync()
+			result, syncErr = engine.IncrementalSync()
 		}
 
-		if err != nil {
-			log.Error().Err(err).Bool("full", full).Msg("sync failed")
+		if syncErr != nil {
+			log.Error().Err(syncErr).Bool("full", full).Msg("sync failed")
+			// If the sync failed due to a connection issue, invalidate the client
+			// so the next cycle reconnects
+			if ldapClient != nil && !ldapClient.IsConnected() {
+				ldapClient.Close()
+				ldapClient = nil
+			}
 			return
 		}
 
@@ -106,6 +157,9 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	for {
 		select {
 		case <-ctx.Done():
+			if ldapClient != nil {
+				ldapClient.Close()
+			}
 			log.Info().Msg("daemon shutting down")
 			return nil
 		case <-sigCh:
@@ -115,6 +169,16 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 			runOnce(false)
 		case <-fullSyncTicker.C:
 			runOnce(true)
+		case <-stopChan(serviceStop):
+			log.Info().Msg("service stop requested")
+			cancel()
 		}
 	}
+}
+
+func stopChan(ch <-chan struct{}) <-chan struct{} {
+	if ch == nil {
+		return make(chan struct{})
+	}
+	return ch
 }

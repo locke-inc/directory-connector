@@ -96,13 +96,29 @@ func (s *Store) GetAllUsers() ([]*SyncedUser, error) {
 
 func (s *Store) UpsertGroup(g *SyncedGroup) error {
 	_, err := s.db.Exec(
-		`INSERT INTO groups (object_guid, cn, members, updated_at)
-		 VALUES (?, ?, ?, ?)
+		`INSERT INTO groups (object_guid, cn, members, scim_group_id, updated_at)
+		 VALUES (?, ?, ?, ?, ?)
 		 ON CONFLICT(object_guid) DO UPDATE SET
-		   cn=excluded.cn, members=excluded.members, updated_at=excluded.updated_at`,
-		g.ObjectGUID, g.CN, g.Members, time.Now(),
+		   cn=excluded.cn, members=excluded.members, scim_group_id=excluded.scim_group_id, updated_at=excluded.updated_at`,
+		g.ObjectGUID, g.CN, g.Members, g.SCIMGroupID, time.Now(),
 	)
 	return err
+}
+
+func (s *Store) GetGroup(objectGUID string) (*SyncedGroup, error) {
+	row := s.db.QueryRow(
+		"SELECT object_guid, cn, members, scim_group_id, updated_at FROM groups WHERE object_guid = ?",
+		objectGUID,
+	)
+	g := &SyncedGroup{}
+	err := row.Scan(&g.ObjectGUID, &g.CN, &g.Members, &g.SCIMGroupID, &g.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return g, nil
 }
 
 func (s *Store) DeleteGroup(objectGUID string) error {
@@ -111,7 +127,7 @@ func (s *Store) DeleteGroup(objectGUID string) error {
 }
 
 func (s *Store) GetAllGroups() ([]*SyncedGroup, error) {
-	rows, err := s.db.Query("SELECT object_guid, cn, members, updated_at FROM groups")
+	rows, err := s.db.Query("SELECT object_guid, cn, members, scim_group_id, updated_at FROM groups")
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +136,7 @@ func (s *Store) GetAllGroups() ([]*SyncedGroup, error) {
 	var groups []*SyncedGroup
 	for rows.Next() {
 		g := &SyncedGroup{}
-		if err := rows.Scan(&g.ObjectGUID, &g.CN, &g.Members, &g.UpdatedAt); err != nil {
+		if err := rows.Scan(&g.ObjectGUID, &g.CN, &g.Members, &g.SCIMGroupID, &g.UpdatedAt); err != nil {
 			return nil, err
 		}
 		groups = append(groups, g)
@@ -210,8 +226,13 @@ func MemberOfJSON(groups []string) string {
 }
 
 // ParseMemberOf parses the stored JSON group membership.
-func ParseMemberOf(jsonStr string) []string {
+func ParseMemberOf(jsonStr string) ([]string, error) {
+	if jsonStr == "" || jsonStr == "null" {
+		return nil, nil
+	}
 	var groups []string
-	json.Unmarshal([]byte(jsonStr), &groups)
-	return groups
+	if err := json.Unmarshal([]byte(jsonStr), &groups); err != nil {
+		return nil, fmt.Errorf("failed to parse member_of JSON: %w", err)
+	}
+	return groups, nil
 }

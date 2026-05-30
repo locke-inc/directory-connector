@@ -108,7 +108,10 @@ func TestStateStore(t *testing.T) {
 	t.Run("member of JSON helpers", func(t *testing.T) {
 		groups := []string{"CN=Engineering,DC=acme,DC=local", "CN=VPN Users,DC=acme,DC=local"}
 		j := state.MemberOfJSON(groups)
-		parsed := state.ParseMemberOf(j)
+		parsed, err := state.ParseMemberOf(j)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if len(parsed) != 2 {
 			t.Fatalf("expected 2 groups, got %d", len(parsed))
 		}

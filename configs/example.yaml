@@ -19,7 +19,7 @@ ldap:
 sync:
   interval: "5m"                         # incremental sync interval
   full_sync_interval: "6h"              # full reconciliation interval
-  user_filter: "(&(objectClass=user)(objectCategory=person)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))"
+  user_filter: "(&(objectClass=user)(objectCategory=person))"
   group_filter: "(objectClass=group)"
   user_search_base: ""                   # defaults to base_dn
   group_search_base: ""                  # defaults to base_dn

@@ -29,6 +29,10 @@ func NewClient(cfg config.LDAPConfig) (*Client, error) {
 func (c *Client) connect() error {
 	address := fmt.Sprintf("%s:%d", c.config.Host, c.config.Port)
 
+	if c.config.TLSSkipVerify {
+		log.Warn().Msg("TLS certificate verification is DISABLED — vulnerable to MITM attacks. Only use for testing with self-signed certs.")
+	}
+
 	tlsConfig := &tls.Config{
 		InsecureSkipVerify: c.config.TLSSkipVerify,
 		ServerName:         c.config.Host,
@@ -79,6 +83,32 @@ func (c *Client) Close() {
 	if c.conn != nil {
 		c.conn.Close()
 	}
+}
+
+func (c *Client) Reconnect() error {
+	if c.conn != nil {
+		c.conn.Close()
+		c.conn = nil
+	}
+	return c.connect()
+}
+
+func (c *Client) IsConnected() bool {
+	if c.conn == nil {
+		return false
+	}
+	// Attempt a lightweight RootDSE query to verify the connection is alive
+	searchReq := ldap.NewSearchRequest(
+		"",
+		ldap.ScopeBaseObject,
+		ldap.NeverDerefAliases,
+		0, 0, false,
+		"(objectClass=*)",
+		[]string{"defaultNamingContext"},
+		nil,
+	)
+	_, err := c.conn.Search(searchReq)
+	return err == nil
 }
 
 func (c *Client) BaseDN() string {
