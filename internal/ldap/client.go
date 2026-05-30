@@ -56,6 +56,10 @@ func (c *Client) connect() error {
 	if c.config.TLS {
 		// LDAPS — TLS from the start (port 636)
 		conn, err = ldap.DialTLS("tcp", address, tlsConfig)
+	} else if c.config.Plaintext {
+		// No TLS at all — only for local testing (e.g. glauth)
+		log.Warn().Msg("LDAP plaintext mode — credentials sent unencrypted. Never use in production.")
+		conn, err = ldap.Dial("tcp", address)
 	} else {
 		// StartTLS — plain connect then upgrade (port 389)
 		conn, err = ldap.Dial("tcp", address)

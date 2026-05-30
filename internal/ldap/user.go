@@ -23,8 +23,13 @@ type ADUser struct {
 }
 
 func ExtractUser(entry *goldap.Entry, idFormat string) *ADUser {
+	samAccountName := entry.GetAttributeValue("sAMAccountName")
+	if samAccountName == "" {
+		samAccountName = entry.GetAttributeValue("cn")
+	}
+
 	user := &ADUser{
-		SAMAccountName:    entry.GetAttributeValue("sAMAccountName"),
+		SAMAccountName:    samAccountName,
 		Email:             entry.GetAttributeValue("mail"),
 		FirstName:         entry.GetAttributeValue("givenName"),
 		LastName:          entry.GetAttributeValue("sn"),
@@ -32,10 +37,16 @@ func ExtractUser(entry *goldap.Entry, idFormat string) *ADUser {
 		DistinguishedName: entry.DN,
 	}
 
-	// Extract objectGUID (raw binary)
+	// Extract objectGUID (raw binary in real AD, may be string in test LDAP servers)
 	guidBytes := entry.GetRawAttributeValue("objectGUID")
 	if len(guidBytes) == 16 {
 		user.ObjectGUID = FormatObjectGUID(guidBytes, idFormat)
+	} else if guidStr := entry.GetAttributeValue("objectGUID"); guidStr != "" {
+		// Fallback: treat as string (e.g. glauth returns custom attributes as strings)
+		user.ObjectGUID = guidStr
+	} else {
+		// Last resort: use DN as unique identifier (test/dev only)
+		user.ObjectGUID = base64.StdEncoding.EncodeToString([]byte(entry.DN))
 	}
 
 	// Parse userAccountControl to detect disabled accounts
@@ -79,6 +90,7 @@ func UserAttributes() []string {
 	return []string{
 		"objectGUID",
 		"sAMAccountName",
+		"cn",
 		"mail",
 		"givenName",
 		"sn",

@@ -27,6 +27,7 @@ type LDAPConfig struct {
 	Port          int    `mapstructure:"port"`
 	TLS           bool   `mapstructure:"tls"`
 	TLSSkipVerify bool   `mapstructure:"tls_skip_verify"`
+	Plaintext     bool   `mapstructure:"plaintext"`
 	CACert        string `mapstructure:"ca_cert"`
 	BindDN        string `mapstructure:"bind_dn"`
 	BindPassword  string `mapstructure:"bind_password"`
