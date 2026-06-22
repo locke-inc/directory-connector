@@ -17,6 +17,9 @@ var serviceInstallCmd = &cobra.Command{
 	Short: "Install as a system service (Windows Service or systemd unit)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		configPath, _ := cmd.Flags().GetString("config-path")
+		if configPath == "" {
+			configPath = cfgFile
+		}
 		if err := service.Install(configPath); err != nil {
 			return err
 		}

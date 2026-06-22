@@ -23,3 +23,15 @@ go.work.sum
 
 # env file
 .env
+
+# Client-specific configs (contain real DNs/hostnames)
+configs/*.yaml
+!configs/example.yaml
+
+# Build output
+dist/
+
+# SQLite state
+*.db
+*.db-shm
+*.db-wal

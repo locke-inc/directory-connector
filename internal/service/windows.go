@@ -65,6 +65,16 @@ func Install(configPath string) error {
 		return fmt.Errorf("failed to get executable path: %w", err)
 	}
 
+	// Resolve relative config paths to absolute — the service runs from a
+	// different working directory (C:\Windows\system32)
+	if configPath != "" && !filepath.IsAbs(configPath) {
+		abs, err := filepath.Abs(configPath)
+		if err != nil {
+			return fmt.Errorf("failed to resolve config path: %w", err)
+		}
+		configPath = abs
+	}
+
 	m, err := mgr.Connect()
 	if err != nil {
 		return fmt.Errorf("failed to connect to service manager (run as Administrator): %w", err)
