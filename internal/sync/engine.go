@@ -1,6 +1,8 @@
 package sync
 
 import (
+	"errors"
+
 	"github.com/locke-inc/directory-connector/internal/config"
 	"github.com/locke-inc/directory-connector/internal/ldap"
 	"github.com/locke-inc/directory-connector/internal/scim"
@@ -8,12 +10,20 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+type SkippedUser struct {
+	Username string `json:"username"`
+	Email    string `json:"email"`
+	Reason   string `json:"reason"`
+}
+
 type Result struct {
-	Created  int
-	Updated  int
-	Disabled int
-	Deleted  int
-	Errors   int
+	Created      int
+	Updated      int
+	Disabled     int
+	Deleted      int
+	Skipped      int
+	Errors       int
+	SkippedUsers []SkippedUser
 }
 
 type Engine struct {
@@ -90,6 +100,16 @@ func (e *Engine) processUser(adUser *ldap.ADUser, result *Result) {
 		log.Info().Str("user", adUser.SAMAccountName).Msg("creating user")
 		if !e.dryRun {
 			if err := e.scim.CreateUser(e.adUserToSCIM(adUser)); err != nil {
+				if errors.Is(err, scim.ErrConflict) {
+					log.Warn().Str("user", adUser.SAMAccountName).Str("email", adUser.Email).Msg("skipped: personame conflict with different identity")
+					result.Skipped++
+					result.SkippedUsers = append(result.SkippedUsers, SkippedUser{
+						Username: adUser.SAMAccountName,
+						Email:    adUser.Email,
+						Reason:   "personame already registered with a different identity",
+					})
+					return
+				}
 				log.Error().Err(err).Str("user", adUser.SAMAccountName).Msg("SCIM create failed")
 				result.Errors++
 				return

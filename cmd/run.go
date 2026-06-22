@@ -10,6 +10,7 @@ import (
 
 	"github.com/locke-inc/directory-connector/internal/config"
 	"github.com/locke-inc/directory-connector/internal/ldap"
+	"github.com/locke-inc/directory-connector/internal/relay"
 	"github.com/locke-inc/directory-connector/internal/scim"
 	"github.com/locke-inc/directory-connector/internal/service"
 	"github.com/locke-inc/directory-connector/internal/state"
@@ -54,6 +55,16 @@ func runDaemonLoop(serviceStop <-chan struct{}) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Start auth relay if enabled
+	if cfg.Relay.Enabled {
+		relayHandler := relay.NewHandler(cfg.LDAP)
+		relayClient := relay.NewClient(cfg.Relay, cfg.Locke.SCIMToken, relayHandler.HandleChallenge)
+		go func() {
+			log.Info().Str("stream", cfg.Relay.StreamEndpoint).Msg("starting auth relay")
+			relayClient.Run(ctx)
+		}()
+	}
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
@@ -71,6 +82,9 @@ func runDaemonLoop(serviceStop <-chan struct{}) error {
 		Dur("incremental_interval", incrementalInterval).
 		Dur("full_sync_interval", fullSyncInterval).
 		Msg("daemon started")
+
+	// Track which skipped users have already been reported (prevents duplicate emails)
+	reportedSkips := make(map[string]bool)
 
 	// Maintain a persistent LDAP connection with automatic reconnection
 	var ldapClient *ldap.Client
@@ -147,8 +161,40 @@ func runDaemonLoop(serviceStop <-chan struct{}) error {
 			Int("updated", result.Updated).
 			Int("disabled", result.Disabled).
 			Int("deleted", result.Deleted).
+			Int("skipped", result.Skipped).
 			Int("errors", result.Errors).
 			Msg("sync complete")
+
+		// Report skipped users to API (only new ones not previously reported)
+		if len(result.SkippedUsers) > 0 {
+			var newSkips []scim.SyncReportUser
+			for _, su := range result.SkippedUsers {
+				if !reportedSkips[su.Username] {
+					newSkips = append(newSkips, scim.SyncReportUser{
+						Username: su.Username,
+						Email:    su.Email,
+						Reason:   su.Reason,
+					})
+					reportedSkips[su.Username] = true
+				}
+			}
+			if len(newSkips) > 0 {
+				report := &scim.SyncReport{
+					Created:      result.Created,
+					Updated:      result.Updated,
+					Disabled:     result.Disabled,
+					Deleted:      result.Deleted,
+					Skipped:      len(newSkips),
+					Errors:       result.Errors,
+					SkippedUsers: newSkips,
+				}
+				if err := scimClient.ReportSyncResult(report); err != nil {
+					log.Warn().Err(err).Msg("failed to send sync report to API")
+				} else {
+					log.Info().Int("new_skips", len(newSkips)).Msg("sync report sent to API")
+				}
+			}
+		}
 	}
 
 	// Run an initial incremental sync immediately

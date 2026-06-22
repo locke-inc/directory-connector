@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -14,6 +15,13 @@ type Config struct {
 	Mapping MappingConfig `mapstructure:"mapping"`
 	State   StateConfig   `mapstructure:"state"`
 	Logging LoggingConfig `mapstructure:"logging"`
+	Relay   RelayConfig   `mapstructure:"relay"`
+}
+
+type RelayConfig struct {
+	Enabled        bool   `mapstructure:"enabled"`
+	StreamEndpoint string `mapstructure:"stream_endpoint"`
+	ResultEndpoint string `mapstructure:"result_endpoint"`
 }
 
 type LockeConfig struct {
@@ -75,12 +83,23 @@ func Load() (*Config, error) {
 	}
 
 	applyEnvOverrides(cfg)
+	applyRelayDefaults(cfg)
 
 	if err := validate(cfg); err != nil {
 		return nil, err
 	}
 
 	return cfg, nil
+}
+
+func applyRelayDefaults(cfg *Config) {
+	base := strings.TrimRight(cfg.Locke.APIURL, "/")
+	if cfg.Relay.StreamEndpoint == "" {
+		cfg.Relay.StreamEndpoint = base + "/connector/auth-stream"
+	}
+	if cfg.Relay.ResultEndpoint == "" {
+		cfg.Relay.ResultEndpoint = base + "/connector/auth-result"
+	}
 }
 
 func setDefaults() {
@@ -101,6 +120,7 @@ func setDefaults() {
 	viper.SetDefault("state.path", "./locke-connector.db")
 	viper.SetDefault("logging.level", "info")
 	viper.SetDefault("logging.max_size_mb", 50)
+	viper.SetDefault("relay.enabled", true)
 }
 
 func applyEnvOverrides(cfg *Config) {

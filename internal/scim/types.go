@@ -45,6 +45,14 @@ func (e *SCIMError) Error() string {
 	return fmt.Sprintf("SCIM error %d: %s", e.StatusCode, e.Body)
 }
 
+func (e *SCIMError) IsConflict() bool {
+	return e.StatusCode == 409
+}
+
+// ErrConflict is returned when a SCIM 409 indicates a personame collision with a different identity.
+// This error should NOT be retried — the collision is deterministic.
+var ErrConflict = fmt.Errorf("SCIM conflict: username already registered with a different identity")
+
 type SCIMGroup struct {
 	Schemas     []string          `json:"schemas,omitempty"`
 	ID          string            `json:"id,omitempty"`

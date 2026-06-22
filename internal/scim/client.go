@@ -3,6 +3,7 @@ package scim
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -32,7 +33,14 @@ func NewClient(cfg config.LockeConfig) *Client {
 
 func (c *Client) CreateUser(user *SCIMUser) error {
 	user.Schemas = []string{SchemaUser}
-	return c.doRequest("POST", "/Users", user, nil)
+	err := c.doRequest("POST", "/Users", user, nil)
+	if err != nil {
+		var scimErr *SCIMError
+		if errors.As(err, &scimErr) && scimErr.IsConflict() {
+			return fmt.Errorf("%w: %s", ErrConflict, scimErr.Body)
+		}
+	}
+	return err
 }
 
 func (c *Client) UpdateUser(username string, user *SCIMUser) error {
@@ -96,6 +104,53 @@ func (c *Client) RemoveGroupMember(groupID, username string) error {
 		},
 	}
 	return c.doRequest("PATCH", "/Groups/"+groupID, patch, nil)
+}
+
+type SyncReport struct {
+	Created      int              `json:"created"`
+	Updated      int              `json:"updated"`
+	Disabled     int              `json:"disabled"`
+	Deleted      int              `json:"deleted"`
+	Skipped      int              `json:"skipped"`
+	Errors       int              `json:"errors"`
+	SkippedUsers []SyncReportUser `json:"skipped_users,omitempty"`
+}
+
+type SyncReportUser struct {
+	Username string `json:"username"`
+	Email    string `json:"email"`
+	Reason   string `json:"reason"`
+}
+
+func (c *Client) ReportSyncResult(report *SyncReport) error {
+	body, err := json.Marshal(report)
+	if err != nil {
+		return fmt.Errorf("marshal sync report: %w", err)
+	}
+
+	// POST to /connector/sync-report (not under /scim/v2)
+	baseURL := strings.TrimSuffix(c.baseURL, "/scim/v2")
+	url := baseURL + "/connector/sync-report"
+
+	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("create sync report request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("post sync report: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("sync report: status %d", resp.StatusCode)
+	}
+
+	return nil
 }
 
 const maxResponseBytes = 4 * 1024 * 1024 // 4MB max response size

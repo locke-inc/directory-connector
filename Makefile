@@ -16,6 +16,7 @@ build-darwin:
 	GOOS=darwin GOARCH=arm64 go build $(LDFLAGS) -o dist/$(BINARY_NAME)-darwin-arm64 .
 
 local:
+	rm -f test-connector.db
 	go build $(LDFLAGS) -o dist/$(BINARY_NAME) .
 
 test:

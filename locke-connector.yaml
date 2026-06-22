@@ -1,0 +1,45 @@
+locke:
+  api_url: "http://localhost:1632"
+  scim_token: "locke_scim_scim-org_jmZ5C08vhKmmRETpHSzp6PqhZkBA3bB7ikKs2tJWjbi43gw7"
+  org_id: "scim-org"
+
+ldap:
+  host: "localhost"
+  port: 3893
+  tls: false
+  plaintext: true
+  tls_skip_verify: false
+  ca_cert: ""
+  bind_dn: "cn=locke-sync,dc=acme,dc=local"
+  bind_password: "dogood"
+  base_dn: "dc=acme,dc=local"
+
+sync:
+  interval: "30s"
+  full_sync_interval: "5m"
+  user_filter: "(&(objectClass=posixAccount)(!(cn=locke-sync)))"
+  group_filter: "(objectClass=posixGroup)"
+  user_search_base: ""
+  group_search_base: ""
+  group_include: []
+  group_exclude: []
+
+mapping:
+  user_id: "objectGUID"
+  user_id_format: "base64"
+  username: "sAMAccountName"
+  email: "mail"
+  first_name: "givenName"
+  last_name: "sn"
+  member_of: "memberOf"
+
+relay:
+  enabled: true
+
+state:
+  path: "./test-connector.db"
+
+logging:
+  level: "debug"
+  file: ""
+  max_size_mb: 50

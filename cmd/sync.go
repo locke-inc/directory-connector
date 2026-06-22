@@ -68,8 +68,35 @@ func runSync(cmd *cobra.Command, args []string) error {
 		Int("updated", result.Updated).
 		Int("disabled", result.Disabled).
 		Int("deleted", result.Deleted).
+		Int("skipped", result.Skipped).
 		Int("errors", result.Errors).
 		Msg("sync complete")
+
+	// Report skipped users to API (triggers admin email notification)
+	if len(result.SkippedUsers) > 0 {
+		var reportUsers []scim.SyncReportUser
+		for _, su := range result.SkippedUsers {
+			reportUsers = append(reportUsers, scim.SyncReportUser{
+				Username: su.Username,
+				Email:    su.Email,
+				Reason:   su.Reason,
+			})
+		}
+		report := &scim.SyncReport{
+			Created:      result.Created,
+			Updated:      result.Updated,
+			Disabled:     result.Disabled,
+			Deleted:      result.Deleted,
+			Skipped:      result.Skipped,
+			Errors:       result.Errors,
+			SkippedUsers: reportUsers,
+		}
+		if err := scimClient.ReportSyncResult(report); err != nil {
+			log.Warn().Err(err).Msg("failed to send sync report to API")
+		} else {
+			log.Info().Int("skipped_users", len(reportUsers)).Msg("sync report sent — admin email triggered")
+		}
+	}
 
 	return nil
 }
