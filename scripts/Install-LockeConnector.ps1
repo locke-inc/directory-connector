@@ -275,14 +275,15 @@ mapping:
   user_id_format: "base64"
 
 state:
-  path: "$($ConfigDir -replace '\\','\\')\locke-connector.db"
+  path: "$($ConfigDir -replace '\\','/')/locke-connector.db"
 
 logging:
-  file: "$($ConfigDir -replace '\\','\\')\locke-connector.log"
+  file: "$($ConfigDir -replace '\\','/')/locke-connector.log"
   level: "info"
 "@
 
-    $configContent | Out-File -FilePath $targetConfig -Encoding UTF8 -Force
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($targetConfig, $configContent, $utf8NoBom)
     Write-OK "Generated $targetConfig"
 }
 
@@ -316,7 +317,7 @@ if ($existingService) {
     Write-Host "  Removing existing service..." -ForegroundColor Yellow
     & $targetBinary service stop 2>$null
     & $targetBinary service uninstall 2>$null
-    Start-Sleep -Seconds 2
+    Start-Sleep -Seconds 5
 }
 
 & $targetBinary service install --config $targetConfig
@@ -325,10 +326,17 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-OK "Service installed"
 
-# Bake env vars into service registry (belt and suspenders)
+# Ensure the service binary path includes --config (the Go binary may not persist it)
 $regKey = "HKLM:\SYSTEM\CurrentControlSet\Services\LockeDirectoryConnector"
 if (Test-Path $regKey) {
-    Set-ItemProperty $regKey -Name Environment -Value @(
+    $imagePath = (Get-ItemProperty $regKey -Name ImagePath).ImagePath
+    if ($imagePath -notlike "*--config*") {
+        $correctPath = "`"$targetBinary`" run --config `"$targetConfig`""
+        Set-ItemProperty $regKey -Name ImagePath -Value $correctPath
+        Write-OK "Fixed service binary path to include --config"
+    }
+
+    Set-ItemProperty $regKey -Name Environment -Type MultiString -Value @(
         "LOCKE_SCIM_TOKEN=$ScimToken",
         "LDAP_BIND_PASSWORD=$LdapPassword"
     )
@@ -365,5 +373,6 @@ Write-Host ""
 Write-Host "  Next steps:" -ForegroundColor White
 Write-Host "    1. Add users to the '$GroupName' AD group (if not done)"
 Write-Host "    2. Test login: have a synced user sign in at Locke ID"
-Write-Host "    3. Monitor: Get-WinEvent -LogName Application | Where { `$_.Message -like '*locke*' }"
+Write-Host "    3. Deploy Chrome extension: .\Install-LockeExtensionGPO.ps1"
+Write-Host "    4. Monitor: Get-WinEvent -LogName Application | Where { `$_.Message -like '*locke*' }"
 Write-Host ""
